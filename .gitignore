@@ -1,0 +1,15 @@
+# Visual Studio
+**/.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.sln.docstates
+
+# Node/React
+frontend/node_modules/
+**/.DS_Store
+
+# Env & secrets
+**/.env
+**/.env.local
