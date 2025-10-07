@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
-namespace backend.Api.Controllers;
+namespace backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -23,7 +23,6 @@ public class SkillsController : ControllerBase
         return Guid.TryParse(idStr, out var gid) ? gid : null;
     }
 
-    // A DTO that returns only what the client needs
     public record SkillDto(Guid Id, string Name, int Level, int Years, string? TagsJson);
     public record SkillReq(string Name, int Level, int Years, string? TagsJson);
 
@@ -51,7 +50,7 @@ public class SkillsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             UserId = uid.Value,
-            Name = req.Name,
+            Name = req.Name.Trim(),
             Level = req.Level,
             Years = req.Years,
             TagsJson = req.TagsJson
@@ -59,7 +58,6 @@ public class SkillsController : ControllerBase
 
         _db.Skills.Add(s);
         await _db.SaveChangesAsync();
-
         return Ok(new SkillDto(s.Id, s.Name, s.Level, s.Years, s.TagsJson));
     }
 
@@ -72,7 +70,7 @@ public class SkillsController : ControllerBase
         var s = await _db.Skills.FirstOrDefaultAsync(x => x.Id == id && x.UserId == uid.Value);
         if (s == null) return NotFound();
 
-        s.Name = req.Name;
+        s.Name = req.Name.Trim();
         s.Level = req.Level;
         s.Years = req.Years;
         s.TagsJson = req.TagsJson;
@@ -93,5 +91,77 @@ public class SkillsController : ControllerBase
         _db.Skills.Remove(s);
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // Bulk save 
+    public record BulkSaveReq(List<SkillReq> Skills, bool ReplaceExisting = true);
+
+    [HttpPost("bulk")]
+    public async Task<IActionResult> BulkSave([FromBody] BulkSaveReq req)
+    {
+        var uid = TryGetUserId();
+        if (uid is null) return Unauthorized();
+
+        var incoming = (req.Skills ?? new())
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+            .Select(s => new SkillReq(s.Name.Trim(), Math.Clamp(s.Level, 1, 5), Math.Max(0, s.Years), s.TagsJson))
+            .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(x => x.Level).First())
+            .ToList();
+
+        var existing = await _db.Skills.Where(s => s.UserId == uid.Value).ToListAsync();
+
+        if (req.ReplaceExisting)
+        {
+            _db.Skills.RemoveRange(existing);
+            await _db.SaveChangesAsync();
+
+            var toAdd = incoming.Select(s => new Skill
+            {
+                Id = Guid.NewGuid(),
+                UserId = uid.Value,
+                Name = s.Name,
+                Level = s.Level,
+                Years = s.Years,
+                TagsJson = s.TagsJson
+            }).ToList();
+
+            _db.Skills.AddRange(toAdd);
+            await _db.SaveChangesAsync();
+
+            var dto = toAdd.Select(s => new SkillDto(s.Id, s.Name, s.Level, s.Years, s.TagsJson)).ToList();
+            return Ok(dto);
+        }
+        else
+        {
+            var byName = existing.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var s in incoming)
+            {
+                if (byName.TryGetValue(s.Name, out var found))
+                {
+                    found.Level = s.Level;
+                    found.Years = s.Years;
+                    found.TagsJson = s.TagsJson;
+                }
+                else
+                {
+                    _db.Skills.Add(new Skill
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = uid.Value,
+                        Name = s.Name,
+                        Level = s.Level,
+                        Years = s.Years,
+                        TagsJson = s.TagsJson
+                    });
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            var fresh = await _db.Skills.Where(s => s.UserId == uid.Value)
+                .Select(s => new SkillDto(s.Id, s.Name, s.Level, s.Years, s.TagsJson))
+                .ToListAsync();
+            return Ok(fresh);
+        }
     }
 }
