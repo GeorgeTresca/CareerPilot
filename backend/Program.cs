@@ -85,6 +85,9 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+builder.Services.AddScoped<backend.Application.Matching.MatchService>();
+
+
 var app = builder.Build();
 
 app.UseSerilogRequestLogging();
@@ -100,5 +103,14 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<backend.Infrastructure.AppDbContext>();
+    var conn = db.Database.GetDbConnection();
+    Console.WriteLine($"[EF] Connecting to DB '{conn.Database}' on '{conn.DataSource}'");
+    await db.Database.MigrateAsync(); 
+}
+
 
 app.Run();

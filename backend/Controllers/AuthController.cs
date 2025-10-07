@@ -24,7 +24,14 @@ public class AuthController : ControllerBase
 
     public record RegisterReq(string Email, string Password, string FullName);
     public record LoginReq(string Email, string Password);
-    public record MeDto(Guid Id, string Email, string FullName, string? Location, string? AvatarUrl);
+    public record MeDto(Guid Id, string Email, string FullName);
+
+    private Guid? TryGetUserId()
+    {
+        var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        return Guid.TryParse(idStr, out var gid) ? gid : null;
+    }
 
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterReq req)
@@ -69,15 +76,16 @@ public class AuthController : ControllerBase
         return Ok(new { token = jwt });
     }
 
-    
     [HttpGet("me")]
     [Authorize]
     public async Task<ActionResult<MeDto>> Me()
     {
-        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-        if (sub == null) return Unauthorized();
-        var user = await _users.FindByIdAsync(sub);
+        var uid = TryGetUserId();
+        if (uid is null) return Unauthorized();
+
+        var user = await _users.FindByIdAsync(uid.Value.ToString());
         if (user == null) return Unauthorized();
-        return new MeDto(user.Id, user.Email!, user.FullName, user.Location, user.AvatarUrl);
+
+        return new MeDto(user.Id, user.Email!, user.FullName);
     }
 }
