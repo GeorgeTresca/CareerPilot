@@ -1,8 +1,8 @@
 ﻿using backend.Domain;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
-using backend.Domain;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -29,7 +29,14 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterReq req)
     {
-        var user = new AppUser { Id = Guid.NewGuid(), Email = req.Email, UserName = req.Email, FullName = req.FullName };
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            Email = req.Email,
+            UserName = req.Email,
+            FullName = req.FullName
+        };
+
         var result = await _users.CreateAsync(user, req.Password);
         if (!result.Succeeded) return BadRequest(result.Errors);
         return Ok();
@@ -44,16 +51,27 @@ public class AuthController : ControllerBase
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email!)
+        };
+
         var token = new JwtSecurityToken(
-            claims: new[] { new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()), new Claim(JwtRegisteredClaimNames.Email, user.Email!) },
+            claims: claims,
             expires: DateTime.UtcNow.AddDays(7),
             signingCredentials: creds
         );
+
         var jwt = new JwtSecurityTokenHandler().WriteToken(token);
         return Ok(new { token = jwt });
     }
 
+    
     [HttpGet("me")]
+    [Authorize]
     public async Task<ActionResult<MeDto>> Me()
     {
         var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub);
