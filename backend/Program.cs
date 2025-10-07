@@ -4,9 +4,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
-using backend.Domain;
-using backend.Infrastructure;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,7 +22,7 @@ builder.Host.UseSerilog();
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Identity (no UI)
+// Identity
 builder.Services
     .AddIdentityCore<AppUser>(o =>
     {
@@ -40,7 +39,6 @@ builder.Services
 // JWT
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new Exception("Missing Jwt:Key");
 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
-
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
@@ -55,14 +53,42 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddAutoMapper(typeof(Program));
+// CORS (adjust frontend origin/port)
+builder.Services.AddCors(o =>
+{
+    o.AddDefaultPolicy(p =>
+        p.WithOrigins("http://localhost:5173", "http://localhost:8100")
+         .AllowAnyHeader()
+         .AllowAnyMethod());
+});
+
 builder.Services.AddControllers();
+
+// Swagger (+Bearer)
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "SkillSync API", Version = "v1" });
+    var scheme = new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter 'Bearer {token}'"
+    };
+    c.AddSecurityDefinition("Bearer", scheme);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        { scheme, Array.Empty<string>() }
+    });
+});
 
 var app = builder.Build();
 
 app.UseSerilogRequestLogging();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -70,6 +96,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

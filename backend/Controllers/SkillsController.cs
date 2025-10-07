@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
-namespace SkillSync.Api.Controllers;
+namespace backend.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
